@@ -7,8 +7,7 @@
 - [The Raw Commands](#the-raw-commands)
 - [Configuring the HW Offloading](#configuring-the-hw-offloading)
 - [Configuring the Physical Interface Attributes](#configuring-the-physical-interface-attributes)
-- [Configuring the OVS Bridges ](#configuring-the-ovs-bridges)
-- [Configuring the OVS Flows](#configuring-the-ovs-flows)
+- [Configuring the OVS Bridges and Flows](#configuring-the-ovs-bridges-and-flows)
 
 ## The Raw Commands
 
@@ -48,7 +47,7 @@ $ ovs-vsctl set Interface eth_rail1 mtu_request=9216
 #Set OVS-Bridge external-ids to tor_ip:
 $ ovs-vsctl set bridge br-rail-1 external-ids:rail_peer_ip={{rail_1_tor_ip}}
 
-$ Add IPs to internal bridge port
+#Add IPs to internal bridge port
 $ ip addr add rail_1_host_ip/infra_rail_subnet dev br-rail-1
 $ ip addr add rail_1_pod_gw_ip dev  br-rail-1
 
@@ -190,7 +189,7 @@ sh-5.1# devlink dev eswitch show pci/0000:37:00.0
 pci/0000:37:00.0: mode switchdev inline-mode none encap-mode basic
 ~~~
 
-## Configuring the OVS Bridges 
+## Configuring the OVS Bridges and Flows
 
 ~~~bash
 #Create OVS bridges for each PF device:
@@ -204,11 +203,11 @@ $ ovs-vsctl set Interface eth_rail1 mtu_request=9216
 #Set OVS-Bridge external-ids to tor_ip:
 $ ovs-vsctl set bridge br-rail-1 external-ids:rail_peer_ip={{rail_1_tor_ip}}
 
-$ Add IPs to internal bridge port
+#Add IPs to internal bridge port
 $ ip addr add rail_1_host_ip/infra_rail_subnet dev br-rail-1
 $ ip addr add rail_1_pod_gw_ip dev  br-rail-1
 
-# Admin Up of bridge internal port
+#Admin Up of bridge internal port
 $ ip link set dev br-rail-1 up
 
 #Add host OVS flows:
@@ -226,10 +225,32 @@ mapfile -t interfaces < <( ip link | awk -F': ' '/enp55/ {print $2}' )  # replac
 
 for i in "${interfaces[@]}"
 do
+#i="enp55s0np0"
+  #Create bridge and assignments
+  ovs-vsctl --may-exist add-br br-$i
+  ovs-vsctl set bridge br-$i fail-mode=secure
+  ovs-vsctl set bridge br-$i external-ids:rail_uplink=$i
+  ovs-vsctl set Interface br-$i mtu_request=9216
+  ovs-vsctl add-port br-$i eth_$i
+  ovs-vsctl set Interface eth_$i mtu_request=9216
 
+  #Set OVS-Bridge external-ids to tor_ip:
+  ovs-vsctl set bridge br-$i external-ids:rail_peer_ip={{rail_1_tor_ip}}
+
+  #Add IPs to internal bridge port
+  ip addr add rail_1_host_ip/infra_rail_subnet dev br-$i
+  ip addr add rail_1_pod_gw_ip dev br-$i
+
+  #Admin Up of bridge internal port
+  ip link set dev br-$i up
+
+  #Create flows on bridge
+  ovs-ofctl add-flow  br-$i "cookie=0x1, arp,arp_tpa= rail_1_host_ip actions=LOCAL"
+  ovs-ofctl add-flow  br-$i "cookie=0x1, arp,arp_tpa= rail_1_pod_gw_ip actions=LOCAL"
+  ovs-ofctl add-flow  br-$i "cookie=0x1, ip,nw_dst= rail_1_host_ip actions=LOCAL"
+  ovs-ofctl add-flow  br-$i "cookie=0x1, ip,nw_dst= rail_1_pod_gw_ip actions=LOCAL"
+  ovs-ofctl add-flow  br-$i "cookie=0x1, arp,arp_tpa=rail_1_tor_ip actions=output:eth_$i"
+  ovs-ofctl add-flow  br-$i "cookie=0x1, ip,in_port=LOCAL,nw_dst=rail_1_tor_ip/8 actions=output:eth_$i"
 done
-
-
 ~~~
 
-## Configuriung OVS Flows 
