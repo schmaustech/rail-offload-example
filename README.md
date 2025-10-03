@@ -192,4 +192,44 @@ pci/0000:37:00.0: mode switchdev inline-mode none encap-mode basic
 
 ## Configuring the OVS Bridges 
 
+~~~bash
+#Create OVS bridges for each PF device:
+$ ovs-vsctl add-br br-rail-1
+$ ovs-vsctl set bridge br-rail-1 fail-mode=secure
+$ ovs-vsctl set bridge br-rail-1 external-ids:rail_uplink=eth_rail1
+$ ovs-vsctl set Interface br-rail-1 mtu_request=9216
+$ ovs-vsctl add-port br-rail-1 eth_rail1
+$ ovs-vsctl set Interface eth_rail1 mtu_request=9216
+
+#Set OVS-Bridge external-ids to tor_ip:
+$ ovs-vsctl set bridge br-rail-1 external-ids:rail_peer_ip={{rail_1_tor_ip}}
+
+$ Add IPs to internal bridge port
+$ ip addr add rail_1_host_ip/infra_rail_subnet dev br-rail-1
+$ ip addr add rail_1_pod_gw_ip dev  br-rail-1
+
+# Admin Up of bridge internal port
+$ ip link set dev br-rail-1 up
+
+#Add host OVS flows:
+#Note that flows are discarded in case that the ovs switch process is restarted (maybe add to systemd service called when ovs service is restarted)
+$ ovs-ofctl add-flow  br-rail-1 “cookie=0x1, arp,arp_tpa= rail_1_host_ip actions=LOCAL”
+$ ovs-ofctl add-flow  br-rail-1  “cookie=0x1, arp,arp_tpa= rail_1_pod_gw_ip actions=LOCAL”
+$ ovs-ofctl add-flow  br-rail-1  “cookie=0x1, ip,nw_dst= rail_1_host_ip actions=LOCAL”
+$ ovs-ofctl add-flow  br-rail-1  “cookie=0x1, ip,nw_dst= rail_1_pod_gw_ip actions=LOCAL”
+$ ovs-ofctl add-flow  br-rail-1  “cookie=0x1, arp,arp_tpa=rail_1_tor_ip actions=output:eth_rail1”
+$ ovs-ofctl add-flow  br-rail-1  “cookie=0x1, ip,in_port=LOCAL,nw_dst=rail_1_tor_ip/8 actions=output:eth_rail1”
+~~~
+
+~~~bash
+mapfile -t interfaces < <( ip link | awk -F': ' '/enp55/ {print $2}' )  # replace enp55 with Mellanox when done testing
+
+for i in "${interfaces[@]}"
+do
+
+done
+
+
+~~~
+
 ## Configuriung OVS Flows 
